@@ -1,0 +1,212 @@
+diff --git a/dist/auth/ttwid.d.ts b/dist/auth/ttwid.d.ts
+index 4c47f49..9d5a7c7 100644
+--- a/dist/auth/ttwid.d.ts
++++ b/dist/auth/ttwid.d.ts
+@@ -7,6 +7,8 @@ export declare class TtwidMissingError extends Error {
+     constructor(statusCode: number);
+ }
+ export interface TtwidOptions {
++    /** Cancel cookie discovery and retry waits with the owning connection. */
++    signal?: AbortSignal;
+     /** Bootstrap URL (default `https://www.tiktok.com/`). */
+     url?: string;
+     /** Total attempts when the cookie is missing (default 8). */
+diff --git a/dist/auth/ttwid.js b/dist/auth/ttwid.js
+index ae89c7d..dbf85e4 100644
+--- a/dist/auth/ttwid.js
++++ b/dist/auth/ttwid.js
+@@ -1,3 +1,4 @@
++import { setTimeout as sleep } from "node:timers/promises";
+ import { randomUa } from "../http/ua.js";
+ import { proxyFetch } from "../http/proxy.js";
+ const TIKTOK_URL = "https://www.tiktok.com/";
+@@ -31,24 +32,25 @@ export async function fetchTTWID(timeoutMs = 10_000, userAgent, proxy, options =
+     const attempts = options.attempts ?? TTWID_FETCH_ATTEMPTS;
+     const delayMs = options.retryDelayMs ?? TTWID_RETRY_DELAY_MS;
+     for (let attempt = 1;; attempt++) {
++        options.signal?.throwIfAborted();
+         try {
+-            return await fetchOnce(url, timeoutMs, ua, proxy);
++            return await fetchOnce(url, timeoutMs, ua, proxy, options.signal);
+         }
+         catch (err) {
+             if (!(err instanceof TtwidMissingError) || attempt >= attempts)
+                 throw err;
+         }
+-        await new Promise((r) => setTimeout(r, delayMs));
++        await sleep(delayMs, undefined, { signal: options.signal });
+     }
+ }
+-async function fetchOnce(url, timeoutMs, ua, proxy) {
++async function fetchOnce(url, timeoutMs, ua, proxy, signal) {
+     const controller = new AbortController();
+     const timer = setTimeout(() => controller.abort(), timeoutMs);
+     try {
+         const resp = await proxyFetch(url, {
+             headers: { "User-Agent": ua },
+             redirect: "manual",
+-            signal: controller.signal,
++            signal: signal ? AbortSignal.any([controller.signal, signal]) : controller.signal,
+         }, proxy);
+         await resp.arrayBuffer();
+         for (const cookie of resp.headers.getSetCookie?.() ?? []) {
+@@ -66,4 +68,3 @@ async function fetchOnce(url, timeoutMs, ua, proxy) {
+         clearTimeout(timer);
+     }
+ }
+-//# sourceMappingURL=ttwid.js.map
+\ No newline at end of file
+diff --git a/dist/client.js b/dist/client.js
+index dd2e2fc..6e59dc4 100644
+--- a/dist/client.js
++++ b/dist/client.js
+@@ -109,35 +109,44 @@ export class TikTokLiveClient extends EventEmitter {
+      * user is not live, or if the loop gives up before any handshake succeeded.
+      */
+     async connect() {
+-        const lang = this._language ?? systemLanguage();
+-        const reg = this._region ?? systemRegion();
+-        const acceptLang = `${lang}-${reg},${lang};q=0.9`;
+-        const { roomId } = await checkOnline(this.username, this.timeoutMs, lang, reg, this._proxy);
+-        return this.runSessions(roomId, (signal) => ({
+-            newSession: async () => {
+-                const userAgent = this._userAgent ?? randomUa();
+-                const ttwid = await fetchTTWID(this.timeoutMs, userAgent, this._proxy);
+-                return { ttwid, userAgent };
+-            },
+-            runSession: (session, onOpen) => connectWss(buildWssUrl(this.cdnHost, roomId, lang, reg, this._compress, this._heartbeatMs), session.ttwid, roomId, {
+-                onEvent: (evt) => this.emit(evt.type, evt.data),
+-                onError: (err) => this.emitError(err),
+-                onOpen,
+-                staleTimeoutMs: this._staleTimeoutMs,
+-            }, signal, {
+-                userAgent: session.userAgent,
+-                cookies: this._cookies,
+-                acceptLanguage: acceptLang,
+-                proxy: this._proxy,
+-                heartbeatMs: this._heartbeatMs,
+-            }),
+-            sleep: abortableSleep,
+-            now: () => Date.now(),
+-        }));
++        const controller = new AbortController();
++        this.abortController = controller;
++        try {
++            const lang = this._language ?? systemLanguage();
++            const reg = this._region ?? systemRegion();
++            const acceptLang = `${lang}-${reg},${lang};q=0.9`;
++            const { roomId } = await checkOnline(this.username, this.timeoutMs, lang, reg, this._proxy, controller.signal);
++            controller.signal.throwIfAborted();
++            return await this.runSessions(roomId, (signal) => ({
++                newSession: async () => {
++                    const userAgent = this._userAgent ?? randomUa();
++                    const ttwid = await fetchTTWID(this.timeoutMs, userAgent, this._proxy, { signal });
++                    return { ttwid, userAgent };
++                },
++                runSession: (session, onOpen) => connectWss(buildWssUrl(this.cdnHost, roomId, lang, reg, this._compress, this._heartbeatMs), session.ttwid, roomId, {
++                    onEvent: (evt) => this.emit(evt.type, evt.data),
++                    onError: (err) => this.emitError(err),
++                    onOpen,
++                    staleTimeoutMs: this._staleTimeoutMs,
++                }, signal, {
++                    userAgent: session.userAgent,
++                    cookies: this._cookies,
++                    acceptLanguage: acceptLang,
++                    proxy: this._proxy,
++                    heartbeatMs: this._heartbeatMs,
++                }),
++                sleep: abortableSleep,
++                now: () => Date.now(),
++            }), controller);
++        }
++        catch (err) {
++            if (this.abortController === controller)
++                this.abortController = null;
++            throw err;
++        }
+     }
+     /** Event + promise wiring around the reconnect loop; `connect()` passes the live transport. */
+-    runSessions(roomId, makeDeps) {
+-        const controller = new AbortController();
++    runSessions(roomId, makeDeps, controller) {
+         this.abortController = controller;
+         const deps = makeDeps(controller.signal);
+         this.emit(EventType.connected, { roomId });
+@@ -191,4 +200,3 @@ export class TikTokLiveClient extends EventEmitter {
+         return fetchRoomInfo(roomId, timeoutMs, cookies);
+     }
+ }
+-//# sourceMappingURL=client.js.map
+\ No newline at end of file
+diff --git a/dist/http/api.d.ts b/dist/http/api.d.ts
+index 406dad9..aec2901 100644
+--- a/dist/http/api.d.ts
++++ b/dist/http/api.d.ts
+@@ -63,8 +63,8 @@ export interface StreamUrls {
+     flvLd: string;
+     flvAudio: string;
+ }
+-export declare function timedFetch(url: string, headers: Record<string, string>, timeoutMs: number, proxy?: string): Promise<Response>;
+-export declare function checkOnline(username: string, timeoutMs?: number, language?: string, region?: string, proxy?: string): Promise<RoomIdResult>;
++export declare function timedFetch(url: string, headers: Record<string, string>, timeoutMs: number, proxy?: string, signal?: AbortSignal): Promise<Response>;
++export declare function checkOnline(username: string, timeoutMs?: number, language?: string, region?: string, proxy?: string, signal?: AbortSignal): Promise<RoomIdResult>;
+ /** Map an `/api-live/user/room` response. Exported for offline tests. */
+ export declare function parseCheckOnline(body: string, httpStatus: number, clean: string): RoomIdResult;
+ export declare function fetchRoomInfo(roomId: string, timeoutMs?: number, cookies?: string, language?: string, region?: string, proxy?: string): Promise<RoomInfo>;
+diff --git a/dist/http/api.js b/dist/http/api.js
+index ea37cff..c6349e9 100644
+--- a/dist/http/api.js
++++ b/dist/http/api.js
+@@ -94,17 +94,14 @@ export class ProfileError extends Error {
+     }
+ }
+ // === API functions ===
+-export async function timedFetch(url, headers, timeoutMs, proxy) {
+-    const controller = new AbortController();
+-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+-    try {
+-        return await proxyFetch(url, { headers, signal: controller.signal }, proxy);
+-    }
+-    finally {
+-        clearTimeout(timer);
+-    }
+-}
+-export async function checkOnline(username, timeoutMs = 10_000, language, region, proxy) {
++export async function timedFetch(url, headers, timeoutMs, proxy, parentSignal) {
++    const deadline = AbortSignal.timeout(timeoutMs);
++    const signal = parentSignal ? AbortSignal.any([parentSignal, deadline]) : deadline;
++    signal.throwIfAborted();
++    // Keep the deadline attached while the caller consumes the response body.
++    return proxyFetch(url, { headers, signal }, proxy);
++}
++export async function checkOnline(username, timeoutMs = 10_000, language, region, proxy, signal) {
+     const clean = username.trim().replace(/^@/, "");
+     const [sysLang, sysReg] = systemLocale();
+     const lang = language ?? sysLang;
+@@ -123,7 +120,7 @@ export async function checkOnline(username, timeoutMs = 10_000, language, region
+         uniqueId: clean,
+     });
+     const url = `https://www.tiktok.com/api-live/user/room?${params}`;
+-    const resp = await timedFetch(url, { "User-Agent": randomUa() }, timeoutMs, proxy);
++    const resp = await timedFetch(url, { "User-Agent": randomUa() }, timeoutMs, proxy, signal);
+     return parseCheckOnline(await resp.text(), resp.status, clean);
+ }
+ /** Map an `/api-live/user/room` response. Exported for offline tests. */
+@@ -225,4 +222,3 @@ function parseStreamUrls(raw) {
+         flvAudio: flv["AUDIO"] ?? "",
+     };
+ }
+-//# sourceMappingURL=api.js.map
+\ No newline at end of file
+diff --git a/package.json b/package.json
+index 3904eda..a5ef31d 100644
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "piratetok-live-js",
+-  "version": "0.3.0",
++  "version": "0.3.0-cam.1",
+   "description": "TikTok Live WebSocket connector — real-time chat, gifts, likes, and viewer events. No authentication required.",
+   "author": "Zmole Cristian",
+   "license": "0BSD",

@@ -3,13 +3,14 @@ export const MAX_PENDING_BYTES = 256 * 1024;
 export const HEARTBEAT_MS = 15000;
 
 export function eventFrame(event, data) {
-  const frame = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-  return Buffer.byteLength(frame) <= MAX_FRAME_BYTES ? frame : null;
+  const frame = Buffer.from(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  return frame.length <= MAX_FRAME_BYTES ? frame : null;
 }
 
 export function writeFrame(res, frame) {
   if (!frame || res.destroyed || res.writableEnded) return false;
-  if (res.writableLength + Buffer.byteLength(frame) > MAX_PENDING_BYTES) {
+  const bytes = Buffer.isBuffer(frame) ? frame.length : Buffer.byteLength(frame);
+  if (res.writableLength + bytes > MAX_PENDING_BYTES) {
     res.destroy(); // A slow consumer must not grow an unbounded user-space queue.
     return false;
   }
@@ -22,6 +23,6 @@ export function send(res, event, data) {
 }
 
 export function emit(room, event, data) {
-  const frame = eventFrame(event, data); // Encode once, not once per subscriber.
+  const frame = eventFrame(event, data); // Share encoded bytes, not per-subscriber string conversion.
   if (frame) for (const res of room.clients) writeFrame(res, frame);
 }

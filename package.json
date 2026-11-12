@@ -12,6 +12,6 @@
     "node": ">=22.19.0"
   },
   "dependencies": {
-    "piratetok-live-js": "0.3.0"
+    "piratetok-live-js": "file:vendor/piratetok-live-js-0.3.0-cam.1.tgz"
   }
 }

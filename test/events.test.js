@@ -2,6 +2,17 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeEvent } from '../src/events.js';
 
+test('discarded gifts do not read or normalize sender data', () => {
+  for (const fields of [
+    { isStreakOver: false, diamondTotal: 10 },
+    { isStreakOver: true, diamondTotal: 0 },
+    { isStreakOver: true, diamondTotal: 'invalid' },
+  ]) {
+    const data = { ...fields, get user() { throw new Error('Discarded gifts must not parse avatars'); } };
+    assert.equal(normalizeEvent('gift', data), null);
+  }
+});
+
 const image = (...urlList) => ({ urlList });
 const emptyUser = { id: '', nickname: '', uniqueId: '', avatarUrl: '', avatarThumb: '', avatarMedium: '', avatarLarge: '' };
 

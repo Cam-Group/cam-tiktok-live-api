@@ -5,20 +5,18 @@ import { EventEmitter } from 'node:events';
 import { EventType } from 'piratetok-live-js';
 import { createBackend } from '../server.js';
 import { startTikTok } from '../src/tiktok.js';
+import { configured } from '../test-support/backend-env.js';
 
 async function backend(t, { testEvents = false, origins = '', connectTikTok } = {}) {
-  const oldTest = process.env.TEST_GIFTS, oldOrigins = process.env.ALLOWED_ORIGINS;
-  process.env.TEST_GIFTS = testEvents ? '1' : '0';
-  process.env.ALLOWED_ORIGINS = origins;
   const connections = [];
-  const server = createBackend(connectTikTok ?? ((name, handlers) => {
-    const connection = { name, handlers, disconnects: 0 };
-    connections.push(connection);
-    handlers.onStatus('ready');
-    return { disconnect() { connection.disconnects++; } };
-  }));
-  if (oldTest === undefined) delete process.env.TEST_GIFTS; else process.env.TEST_GIFTS = oldTest;
-  if (oldOrigins === undefined) delete process.env.ALLOWED_ORIGINS; else process.env.ALLOWED_ORIGINS = oldOrigins;
+  const server = configured({ TEST_GIFTS: testEvents ? '1' : '0', ALLOWED_ORIGINS: origins }, () =>
+    createBackend(connectTikTok ?? ((name, handlers) => {
+      const connection = { name, handlers, disconnects: 0 };
+      connections.push(connection);
+      handlers.onStatus('ready');
+      return { disconnect() { connection.disconnects++; } };
+    })));
+
   const sockets = new Set();
   server.on('connection', socket => { sockets.add(socket); socket.on('close', () => sockets.delete(socket)); });
   t.after(() => new Promise(resolve => {

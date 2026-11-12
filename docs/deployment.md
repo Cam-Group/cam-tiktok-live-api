@@ -29,6 +29,8 @@ PORT=3100 ALLOWED_ORIGINS=https://game.example,http://localhost:5173 npm start
 
 An origin is scheme + hostname + optional port, with no path or trailing slash. `http://localhost:5173`, `http://127.0.0.1:5173` and `https://localhost:5173` are different origins. Configuration is read when a backend instance is created; restart the standalone server after changing environment variables.
 
+The connector archive in [vendor](../vendor/README.md) is a required install input, not a disposable build cache. Keep it alongside package.json and package-lock.json. Docker includes it before npm ci, and Render installs the same pinned patched package without extra hooks.
+
 The native Node process does not load `.env` files automatically. Set variables in your shell, process manager or hosting environment. Docker Compose can read its own `.env` file for interpolation, as described below. The server has no built-in token, login or cookie-based authentication.
 
 ## Native process on your current machine
@@ -118,7 +120,7 @@ Stopping/recreating disconnects SSE clients and clears in-memory rooms. There is
 Transfer the project source, Dockerfile, compose.yaml and lockfile; do not transfer node_modules or runtime history. For example, create a source archive on your current machine:
 
 ```sh
-tar -czf tiktok-live-backend.tar.gz Dockerfile compose.yaml .dockerignore package.json package-lock.json server.js src README.md docs AGENTS.md test
+tar -czf tiktok-live-backend.tar.gz Dockerfile compose.yaml compose.cloudflare.yaml render.yaml .dockerignore .env.example package.json package-lock.json server.js src vendor test-support README.md docs AGENTS.md test
 scp tiktok-live-backend.tar.gz your_user@your_linux_host:~/
 ```
 

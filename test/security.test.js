@@ -3,17 +3,11 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import { EventEmitter, once } from 'node:events';
 import { createBackend } from '../server.js';
-
-function configured(env, fn) {
-  const previous = Object.fromEntries(Object.keys(env).map(key => [key, process.env[key]]));
-  Object.assign(process.env, env);
-  try { return fn(); }
-  finally { for (const [key, value] of Object.entries(previous)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } }
-}
+import { configured } from '../test-support/backend-env.js';
 
 async function backend(t, env = {}) {
   const made = [], closed = new EventEmitter(), controllers = [];
-  const server = configured({ NODE_ENV: 'test', TEST_GIFTS: '0', ALLOWED_ORIGINS: '', TRUSTED_PROXIES: '', ...env }, () => createBackend((name, handlers) => {
+  const server = configured(env, () => createBackend((name, handlers) => {
     made.push(name);
     handlers.onStatus('ready');
     return { disconnect() {} };
@@ -170,7 +164,7 @@ test('SSE heartbeat is a comment and does not change named event payloads', { ti
 });
 
 test('production simulation and malformed CORS configuration fail startup', () => {
-  assert.throws(() => configured({ NODE_ENV: 'production', TEST_GIFTS: '1' }, () => createBackend()), /cannot be enabled in production/);
+  assert.throws(() => configured({ NODE_ENV: 'production', TEST_GIFTS: '1', ALLOWED_ORIGINS: 'https://game.example' }, () => createBackend()), /cannot be enabled in production/);
   for (const origin of ['*', 'https://game.example/path', 'not-an-origin']) {
     assert.throws(() => configured({ ALLOWED_ORIGINS: origin }, () => createBackend()), /exact HTTP\(S\) origins/);
   }

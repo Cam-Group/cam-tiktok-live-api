@@ -3,6 +3,7 @@ FROM node:24-bookworm-slim
 WORKDIR /app
 
 COPY package.json package-lock.json ./
+COPY vendor/*.tgz ./vendor/
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 
 COPY server.js ./

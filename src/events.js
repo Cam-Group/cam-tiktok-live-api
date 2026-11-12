@@ -33,6 +33,11 @@ function user(data) {
 }
 
 export function normalizeEvent(type, data = {}) {
+  let diamonds = null;
+  if (type === 'gift') {
+    diamonds = count(data.diamondTotal);
+    if (!data.isStreakOver || diamonds === null || diamonds <= 0) return null;
+  }
   const common = {
     eventId: id(data.common?.msgId),
     roomId: id(data.common?.roomId),
@@ -45,8 +50,6 @@ export function normalizeEvent(type, data = {}) {
   switch (type) {
     case 'chat': return { ...base, text: text(data.content) };
     case 'gift': {
-      const diamonds = count(data.diamondTotal);
-      if (!data.isStreakOver || diamonds === null || diamonds <= 0) return null;
       return {
         ...base,
         gift: text(data.gift?.name),

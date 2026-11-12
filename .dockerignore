@@ -1,6 +1,8 @@
 **
 !package.json
 !package-lock.json
+!vendor/
+!vendor/*.tgz
 !server.js
 !src/
 !src/**

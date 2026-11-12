@@ -120,6 +120,10 @@ This is an **unofficial TikTok protocol**, not a supported TikTok developer API.
 
 Clients with the same normalized username share one TikTok connection. Up to **10 usernames** can be monitored per process; empty rooms remain for a **10-second grace period**. Usernames are not lowercased, so clients should use consistent casing.
 
+## Dependency maintenance
+
+The connector is pinned to a locally packaged `piratetok-live-js@0.3.0-cam.1` with HTTP-body deadline and connection-cancellation fixes. Its original license, provenance, source diff and reproduction instructions are in [vendor/README.md](vendor/README.md). Keep the vendor archive with the source when deploying; npm ci installs it normally without lifecycle scripts.
+
 ## Development
 
 ```sh

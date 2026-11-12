@@ -18,6 +18,29 @@ test('oversized UTF-8 frames are omitted without disconnecting healthy subscribe
   assert.equal(res.frames.length, 1);
 });
 
+test('broadcast shares one encoded UTF-8 buffer without rescanning it per subscriber', t => {
+  const clients = Array.from({ length: 100 }, () => response());
+  const byteLength = Buffer.byteLength;
+  let scans = 0;
+  t.mock.method(Buffer, 'byteLength', (...args) => { scans++; return byteLength(...args); });
+  emit({ clients: new Set(clients) }, 'chat', { text: 'Hello 👋' });
+  const frame = clients[0].frames[0];
+  assert.ok(Buffer.isBuffer(frame));
+  assert.equal(frame.toString('utf8'), 'event: chat\ndata: {"text":"Hello 👋"}\n\n');
+  assert.ok(clients.every(client => client.frames[0] === frame));
+  assert.equal(scans, 0);
+});
+
+test('encoded buffers preserve the exact pending-byte boundary', () => {
+  const frame = eventFrame('chat', { text: '👋' });
+  const fits = response(MAX_PENDING_BYTES - frame.length);
+  const exceeds = response(MAX_PENDING_BYTES - frame.length + 1);
+  assert.equal(writeFrame(fits, frame), true);
+  assert.equal(fits.destroyed, false);
+  assert.equal(writeFrame(exceeds, frame), false);
+  assert.equal(exceeds.destroyed, true);
+});
+
 test('slow subscribers are disconnected before the pending-byte limit is exceeded', () => {
   const slow = response(MAX_PENDING_BYTES - 1), fast = response();
   emit({ clients: new Set([slow, fast]) }, 'chat', { text: 'Hello' });

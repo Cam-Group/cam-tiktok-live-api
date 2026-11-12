@@ -2,16 +2,17 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { backendEnv } from '../test-support/backend-env.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const composeAvailable = spawnSync('docker', ['compose', 'version'], { encoding: 'utf8', timeout: 5000 }).status === 0;
 
 test('Compose config keeps host publishing private and simulation disabled', { skip: !composeAvailable }, () => {
-  const result = spawnSync('docker', ['compose', '-f', 'compose.yaml', 'config', '--format', 'json'], {
+  const result = spawnSync('docker', ['compose', '--env-file', '/dev/null', '-f', 'compose.yaml', 'config', '--format', 'json'], {
     cwd: root,
     encoding: 'utf8',
     timeout: 10000,
-    env: { ...process.env, PORT: '3200', ALLOWED_ORIGINS: 'https://game.example', TEST_GIFTS: '1' },
+    env: backendEnv({ PORT: '3200', ALLOWED_ORIGINS: 'https://game.example', TEST_GIFTS: '1' }),
   });
   assert.equal(result.status, 0, result.stderr);
   const service = JSON.parse(result.stdout).services.backend;

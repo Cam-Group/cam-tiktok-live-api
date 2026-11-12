@@ -6,7 +6,7 @@ This is a **trial deployment**, not an always-on LIVE service. The repository's 
 
 ## 1. Push and create the service
 
-1. Push this project, including render.yaml and package-lock.json, to a Git repository that Render can access. Never commit .env, .secrets, tunnel tokens or node_modules. Review any other local changes before including them.
+1. Push this project, including render.yaml, package-lock.json and the vendor directory, to a Git repository that Render can access. Never commit .env, .secrets, tunnel tokens or node_modules. Review any other local changes before including them.
 2. In the [Render Dashboard](https://dashboard.render.com/), choose **New > Blueprint** and connect the repository/branch. Use render.yaml at the repository root.
 3. When prompted for **ALLOWED_ORIGINS**, enter the exact frontend origin, such as `https://your-app.vercel.app`. Multiple origins are comma-separated. Include the scheme; omit paths and trailing slashes. Do not use `*` or leave it empty. Preview deployments need their own exact allowed origin.
 4. Confirm that the service is a **Web Service**, runtime **Node**, plan **Free**, and only one instance. Review the current Free limits and any account spending controls before creating it.
@@ -76,6 +76,12 @@ This request **does contact TikTok**. Expect HTTP SSE data with `retry: 3000`, n
 Use the Render HTTPS origin as the backend base URL and keep the `/events?username=...` route unchanged. Follow the [client integration guide](client-guide.md). For a Vercel or similar frontend, update the backend URL in its own environment/configuration and redeploy it. Never embed a server secret or tunnel token in frontend code.
 
 Test in the real browser: open a stream, receive events, reload/close the page, and verify that the client reconnects without accumulating subscriptions. Keep native EventSource reconnection enabled. Health probes deliberately have no browser CORS header; use `/events` for frontend integration, not `/healthz`.
+
+## Troubleshooting origin validation
+
+If build or startup logs report `ALLOWED_ORIGINS must contain exact HTTP(S) origins without paths`, correct **Environment > ALLOWED_ORIGINS** in Render and redeploy. Enter only the frontend origin, for example `https://your-app.vercel.app`, or a comma-separated list of exact origins. Do not include a trailing slash, URL path, wildcard, surrounding quotes or the `ALLOWED_ORIGINS=` prefix in the Dashboard value.
+
+Offline test fixtures isolate all application settings (including origins, quotas, proxy identity and bind settings), so hosting configuration cannot mask the behavior under test. This does not repair or bypass invalid deployment settings: the actual production process still refuses to start with a malformed origin. A passing build alone does not prove that the runtime environment is valid. Do not remove CORS validation or drop the test build gate to work around this error.
 
 ## 5. Free-plan and LIVE limitations
 
