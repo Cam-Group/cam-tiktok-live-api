@@ -2,6 +2,10 @@
 
 [README](../README.md) · [API reference](client-api.md) · [Deployment](deployment.md)
 
+## Render deployment
+
+For Render, follow the [Render deployment guide](render.md), enter the exact frontend origin in ALLOWED_ORIGINS, and use the assigned `https://<service>.onrender.com` URL as the backend base URL. The `/events` route and payloads are unchanged. Free-plan cold starts, proxy-shared quotas and restarts can interrupt a stream; preserve reconnect behavior and clean up old subscriptions. No replay is available for events missed during a gap.
+
 ## Choose your backend URL
 
 - A client on the same computer can use `http://127.0.0.1:3100`.
@@ -73,6 +77,12 @@ The base URL examples assume the API is mounted at the root. `new URL('/events',
 An open browser stream does not mean the TikTok user is online. Conversely, a temporary TikTok reconnect can happen while the browser stream stays open. Do not create a new EventSource just because a TikTok status says reconnecting.
 
 Browsers generally do not expose the HTTP response body or exact HTTP status in `EventSource.onerror`. Use DevTools or a terminal request to distinguish CORS, 400, 403 and 503 failures. An EventSource may enter CLOSED for terminal failures; correct the configuration and explicitly reconnect rather than assuming every failure is retried.
+
+### LIVE end and a later session
+
+Keep the SSE subscription open when a username ends a LIVE. The backend retires that session and retries with a fresh TikTok client, resolving the username's current room again instead of reusing the ended room ID. Offline responses keep the retry loop running: the first two backend retries wait 3 seconds each, then retries wait 30 seconds; a successful connection resets that backoff. No server restart or manual cache clearing is required for this lifecycle.
+
+The installed library's internal transport reconnects are scoped to the originally resolved room ID. A `liveEnded` event therefore triggers backend-level reconnection even if no `disconnected` event follows. Late events from the retired session are ignored. Existing SSE clients stay subscribed, but events during an offline/reconnection gap are not replayed. TikTok availability and restrictions still apply.
 
 ### Lifecycle and capacity
 

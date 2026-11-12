@@ -30,10 +30,21 @@ export function startTikTok(name, handlers, lib = piratetok) {
   forward(E.share, 'share', onShare);
   forward(E.join, 'join', onJoin);
   forward(E.roomUserSeq, 'viewers', onViewers);
-  client.on(E.liveEnded, live(() => onStatus(`@${name} has ended the live stream.`)));
+  function lost(reason) {
+    // The library reconnects within one room ID; a new LIVE needs a fresh client.
+    // Retire first so abort/disconnect callbacks cannot schedule duplicate retries.
+    closed = true;
+    try { client.disconnect(); } catch {}
+    onLost(reason);
+  }
+  client.on(E.liveEnded, live(() => {
+    const reason = `@${name} has ended the live stream.`;
+    onStatus(reason);
+    lost(reason);
+  }));
   client.on(E.reconnecting, live(() => onStatus(`Reconnecting to @${name}...`)));
   // A rejected connect() can also emit disconnected; onFail already handles that case.
-  client.on(E.disconnected, live(() => { if (linked) onLost('Connection lost.'); }));
+  client.on(E.disconnected, live(() => { if (linked) lost('Connection lost.'); }));
   client.on('error', live(err => console.log(`[@${name}] piratetok error:`, JSON.stringify(String(err?.message || err)))));
 
   onStatus(`Connecting to @${name} (piratetok-live-js)...`);

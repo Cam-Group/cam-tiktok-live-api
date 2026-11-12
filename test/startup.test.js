@@ -51,6 +51,14 @@ for (const host of [undefined, '0.0.0.0']) {
     const simulation = await fetch(`${base}/gift`, { signal: AbortSignal.timeout(2000) });
     assert.equal(simulation.status, 404);
     await simulation.text();
+    const health = await fetch(`${base}/healthz`, { signal: AbortSignal.timeout(2000) });
+    assert.equal(health.status, 200);
+    assert.equal(await health.text(), 'ok\n');
+    // Exercise the real entry point's signal handler, not the test runner's cleanup.
+    child.kill(host ? 'SIGTERM' : 'SIGINT');
+    assert.equal(await exited, 0);
+    assert.equal(child.signalCode, null);
+    assert.match(stdout, /Backend shutting down\./);
     assert.equal(stderr, '');
   });
 }

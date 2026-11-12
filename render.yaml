@@ -1,0 +1,33 @@
+# Free trial deployment. Review docs/render.md before creating the service.
+services:
+  - type: web
+    name: tiktok-live-backend
+    runtime: node
+    plan: free
+    buildCommand: npm ci --ignore-scripts && NODE_ENV=test npm test
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: TEST_GIFTS
+        value: "0"
+      - key: ALLOWED_ORIGINS
+        sync: false
+      - key: MAX_CLIENTS
+        value: "100"
+      - key: MAX_CLIENTS_PER_IP
+        value: "5"
+      - key: REQUESTS_PER_MINUTE
+        value: "60"
+      - key: GLOBAL_REQUESTS_PER_MINUTE
+        value: "600"
+      # Render proxy identity has not been qualified. Ignore forwarding headers.
+      - key: TRUSTED_PROXIES
+        value: ""
+      - key: CLIENT_IP_HEADER
+        value: x-forwarded-for

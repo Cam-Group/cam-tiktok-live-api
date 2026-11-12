@@ -78,7 +78,9 @@ docker compose -p tiktoklive-docker-qa -f compose.yaml -f compose.cloudflare.yam
 docker compose -p tiktoklive-docker-qa -f compose.yaml -f compose.cloudflare.yaml logs --tail 30 cloudflared
 ```
 
-This recreates the backend, disconnecting existing SSE clients briefly. The connector will make outbound connections to Cloudflare; a restrictive network must allow its documented tunnel egress (port 7844). The pinned connector image is updated deliberately, not automatically.
+This recreates the backend, disconnecting existing SSE clients briefly. The connector makes outbound QUIC/TCP connections to Cloudflare edge on port 7844. The overlay pins `TUNNEL_EDGE_IP_VERSION=4` because the Compose bridge network has no IPv6 route; leave it set unless the Docker network is deliberately given working IPv6. The pinned connector image is updated deliberately, not automatically.
+
+The connector shares the backend's network namespace, so a backend restart or recreation detaches it from the live namespace and the tunnel goes down with DNS or `network is unreachable` errors. The overlay sets `depends_on.restart: true`, so `docker compose restart backend` and a full `docker compose up -d` restart or recreate the connector as needed. Two cases bypass that: `docker restart`/the Docker Desktop restart button, and `up -d <service>` or `--force-recreate backend` targeting only the backend. After either, fix the connector explicitly: `docker compose -p tiktoklive-docker-qa -f compose.yaml -f compose.cloudflare.yaml restart cloudflared`, or `up -d --force-recreate cloudflared` when the backend container was replaced.
 
 Wait until Cloudflare reports the connector healthy. Backend health checks only local HTTP, not tunnel readiness, TikTok availability or end-to-end SSE. Starting a connector does not by itself prove the DNS route is published.
 

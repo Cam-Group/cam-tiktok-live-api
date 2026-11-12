@@ -7,11 +7,16 @@ services:
   cloudflared:
     image: cloudflare/cloudflared@sha256:4955524aeaa379e154023d5a027c250f7b35041a2e7e950cf13f144bc9b9c5ba
     restart: unless-stopped
+    # Docker bridge here has no IPv6; an AAAA-first lookup otherwise makes QUIC dial ::ffff:... and fail.
+    environment:
+      TUNNEL_EDGE_IP_VERSION: "4"
     # Share only the backend's network namespace: tunnel requests arrive from loopback.
     network_mode: service:backend
     depends_on:
       backend:
         condition: service_healthy
+        # A backend restart detaches this service from the shared network namespace; restart with it.
+        restart: true
     command: ["tunnel", "--no-autoupdate", "run", "--token-file", "/run/secrets/cloudflare_tunnel_token"]
     secrets:
       - cloudflare_tunnel_token

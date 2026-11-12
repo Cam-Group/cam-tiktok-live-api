@@ -112,6 +112,14 @@ export function createBackend(connectTikTok = startTikTok) {
     res.setHeader('Referrer-Policy', 'no-referrer');
     res.setHeader('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
     if (req.rawHeaders.length > 64) return res.writeHead(431, TEXT).end('Too many request headers\n');
+    // Exact, payload-free liveness probe: never opens a room or consumes admission quota.
+    if (req.url === '/healthz') {
+      if (!['GET', 'HEAD'].includes(req.method)) return res.writeHead(405, { ...TEXT, Allow: 'GET, HEAD' }).end('Method not allowed\n');
+      if (req.headers['transfer-encoding'] || Number(req.headers['content-length']) > 0) {
+        return res.writeHead(400, { ...TEXT, Connection: 'close' }).end('Request bodies are not supported\n');
+      }
+      return res.writeHead(200, TEXT).end('ok\n');
+    }
     const corsAllowed = allowCors(req, res);
     const ip = access.clientIp(req);
     if (!ip) return res.writeHead(400, TEXT).end('Invalid forwarded client IP\n');
@@ -181,7 +189,8 @@ export function createBackend(connectTikTok = startTikTok) {
     } else res.writeHead(404).end();
   });
   server.maxConnections = access.maxClients + 100;
-  server.maxHeadersCount = 32;
+  // Preserve one overflow header so the 32-entry check rejects instead of silently truncating.
+  server.maxHeadersCount = 33;
   server.on('listening', () => {
     heartbeat = setInterval(() => {
       for (const room of rooms.values()) for (const res of room.clients) writeFrame(res, ': heartbeat\n\n');
@@ -203,5 +212,19 @@ export function createBackend(connectTikTok = startTikTok) {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const port = Number(process.env.PORT) || 3100;
   const host = process.env.HOST || '127.0.0.1';
-  createBackend().listen(port, host, () => console.log(`Backend listening on ${host}:${port}. SSE: /events?username=your_username`));
+  const server = createBackend();
+  let stopping = false;
+  const stop = () => {
+    if (stopping) return;
+    stopping = true;
+    console.log('Backend shutting down. Clients must reconnect; events are not replayed.');
+    const deadline = setTimeout(() => process.exit(1), 10000);
+    deadline.unref();
+    // Stop accepting requests, close SSE responses, then run the existing room cleanup.
+    server.close(() => process.exit(0));
+    server.closeAllConnections();
+  };
+  process.on('SIGTERM', stop);
+  process.on('SIGINT', stop);
+  server.listen(port, host, () => console.log(`Backend listening on ${host}:${port}. SSE: /events?username=your_username`));
 }

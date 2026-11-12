@@ -97,6 +97,59 @@ test('request methods, bodies, long URLs and headers are bounded without opening
   assert.deepEqual(fixture.made, []);
 });
 
+test('the header-count boundary accepts 32 entries and rejects overflow, including probes', async t => {
+  const fixture = await backend(t);
+  for (const path of ['/', '/healthz']) {
+    for (const count of [32, 33, 40]) {
+      const status = await new Promise((resolve, reject) => {
+        const headers = {
+          Host: new URL(fixture.base).host, Connection: 'close',
+          ...Object.fromEntries(Array.from({ length: count - 2 }, (_, i) => [`X-Header-${i}`, '1'])),
+        };
+        http.get(fixture.base + path, { headers }, res => {
+          res.resume(); res.on('end', () => resolve(res.statusCode));
+        }).on('error', reject);
+      });
+      assert.equal(status, count === 32 ? 200 : 431, `${path}: ${count} headers`);
+    }
+  }
+  assert.deepEqual(fixture.made, []);
+});
+
+test('liveness stays healthy without consuming quotas or opening TikTok connections', async t => {
+  const fixture = await backend(t, {
+    REQUESTS_PER_MINUTE: '1', GLOBAL_REQUESTS_PER_MINUTE: '1',
+    ALLOWED_ORIGINS: 'https://game.example', TRUSTED_PROXIES: '127.0.0.1',
+  });
+  const headers = { Origin: 'https://other.example', 'X-Forwarded-For': 'invalid, chain' };
+  for (let i = 0; i < 3; i++) {
+    const response = await fixture.get('/healthz', headers);
+    assert.equal(response.status, 200);
+    assert.equal(await response.text(), 'ok\n');
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    assert.equal(response.headers.get('access-control-allow-origin'), null);
+  }
+  const root = await fixture.get();
+  assert.equal(root.status, 200); await root.text();
+  const limited = await fixture.get();
+  assert.equal(limited.status, 429); await limited.text();
+  const health = await fixture.get('/healthz');
+  assert.equal(health.status, 200); await health.text();
+  const head = await fetch(`${fixture.base}/healthz`, { method: 'HEAD' });
+  assert.equal(head.status, 200);
+  assert.equal(await head.text(), '');
+  const post = await fetch(`${fixture.base}/healthz`, { method: 'POST' });
+  assert.equal(post.status, 405);
+  assert.equal(post.headers.get('allow'), 'GET, HEAD'); await post.text();
+  await new Promise((resolve, reject) => {
+    const req = http.request(`${fixture.base}/healthz`, { headers: { 'Content-Length': '1' } }, res => {
+      res.resume(); assert.equal(res.statusCode, 400); res.on('end', resolve);
+    });
+    req.on('error', reject); req.end('x');
+  });
+  assert.deepEqual(fixture.made, []);
+});
+
 test('SSE heartbeat is a comment and does not change named event payloads', { timeout: 5000 }, async t => {
   let tick;
   const nativeInterval = globalThis.setInterval;

@@ -22,6 +22,12 @@ TikTok LIVE backend is running. Use /events?username=your_username
 
 This is not a TikTok connectivity or readiness check.
 
+### GET /healthz
+
+Exact, query-free process liveness endpoint for hosting probes. GET returns HTTP 200, `Content-Type: text/plain; charset=utf-8`, `Cache-Control: no-store`, and `ok` followed by a newline. HEAD returns the same status/headers without a body. Other methods return 405 with `Allow: GET, HEAD`; request bodies are rejected with 400.
+
+This endpoint bypasses CORS and application request/stream admission quotas, exposes no room or user data, and never contacts TikTok. HTTP header-size/count protections still apply. It does not prove upstream connectivity, LIVE availability or delivery completeness. It intentionally has no Access-Control-Allow-Origin header; browser clients should subscribe to `/events` instead.
+
 ### GET /events?username=your_username
 
 Opens a persistent event stream. `username` is required.
@@ -61,7 +67,7 @@ All payloads use **named events**. Browser clients must use `addEventListener('c
 
 | Code | Meaning |
 |---|---|
-| `200` | SSE stream opened, root check succeeded, or simulation accepted |
+| `200` | SSE stream opened, root/liveness check succeeded, or simulation accepted |
 | `204` | Allowed OPTIONS request on `/events` or an enabled simulation route |
 | `400` | Invalid/missing stream username, invalid supplied simulation number, or nonpositive simulated diamonds |
 | `403` | Disallowed Origin, or a cross-site simulation request |
@@ -74,7 +80,7 @@ All payloads use **named events**. Browser clients must use `addEventListener('c
 
 Validation errors use plain text, not a JSON error schema. Some 403/404 responses have no body. After SSE HTTP 200 has been sent, TikTok connection failures are reported as `status` events, not a later HTTP error code.
 
-OPTIONS is handled before stream username validation and does not create a room, but still consumes a request quota. Use GET for subscriptions and simulations; HEAD is allowed only for the root check, and unsupported methods return 405. Request bodies are rejected. Limit responses include Retry-After in seconds; see [all limits and proxy identity rules](security.md). The HTTP body remains an indefinite stream after a successful subscription, not a 15-second request.
+OPTIONS is handled before stream username validation and does not create a room, but still consumes a request quota. Use GET for subscriptions and simulations; HEAD is allowed for the root and `/healthz` checks, and unsupported methods return 405. Request bodies are rejected. Limit responses include Retry-After in seconds; see [all limits and proxy identity rules](security.md). The HTTP body remains an indefinite stream after a successful subscription, not a 15-second request.
 
 ## 3. Common payload rules
 

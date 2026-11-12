@@ -31,7 +31,7 @@ All limits are **per backend process**. Defaults are conservative resource polic
 | TCP connections | MAX_CLIENTS + 100 | Additional transport-level ceiling; excess connections can be closed without an HTTP response |
 | Docker memory / CPU / processes | 512 MiB / 1 CPU / 64 PIDs | Compose budgets; adjust only after measurement |
 
-Per-minute request counters use **fixed 60-second windows**, not a smooth per-second limiter. They permit bursts up to the configured count, including bursts near window boundaries. Requests rejected by an IP's request quota do not consume further global admission quota. These quotas apply to requests reaching application admission (including root health requests, OPTIONS, ordinary errors and reconnect attempts), **not each SSE event**. Malformed requests rejected by the HTTP parser or preliminary header/IP checks do not reach that gate.
+Per-minute request counters use **fixed 60-second windows**, not a smooth per-second limiter. They permit bursts up to the configured count, including bursts near window boundaries. Requests rejected by an IP's request quota do not consume further global admission quota. These quotas apply to requests reaching application admission (including root reachability requests, OPTIONS, ordinary errors and reconnect attempts), **not each SSE event**. The dedicated, payload-free `/healthz` liveness endpoint bypasses application admission and CORS so quota exhaustion or malformed forwarding headers do not trigger platform restart loops; HTTP header bounds still apply. It never opens a TikTok connection or reports upstream health. Malformed requests rejected by the HTTP parser or preliminary header/IP checks do not reach that gate.
 
 The backend does not set an events-per-minute quota. Its sustainable event/client throughput is **not yet benchmarked**. TikTok may batch, omit, repeat or throttle upstream messages independently. No limit on the number of commenters or gift senders in a LIVE is configured; that does not guarantee complete tracking of every viewer.
 
@@ -62,6 +62,8 @@ proxy_set_header X-Forwarded-For $remote_addr;
 Set TRUSTED_PROXIES to the immediate proxy IP **as seen by the backend**. Native loopback and Docker gateway addresses are not necessarily the same. Do not assume the container sees 127.0.0.1 merely because Nginx connects to the host's loopback-published port.
 
 Do not trust all private networks or every Internet client. If a second proxy/CDN is involved, first configure trusted real-client-IP handling at the immediate proxy using that provider's current documented IP ranges, then send a single sanitized address to this backend. Alternatively, use the bundled Cloudflare overlay, which trusts only connector loopback and selects Cloudflare's single-address header rather than a caller-influenced X-Forwarded-For chain. Do not trust a caller-supplied CDN header by name alone.
+
+The [Render Free trial configuration](render.md) deliberately leaves proxy trust empty until the platform's forwarding contract is qualified. It may therefore share the 5-stream and 60-request/minute quota among visitors behind the same observed proxy peer; it is not qualified for a larger public audience.
 
 Without correct forwarding configuration, every visitor behind a proxy may share one IP quota. Keep the published port private so callers cannot bypass the controlled proxy. This is a deployment prerequisite, not something the app can infer safely from arbitrary headers.
 

@@ -2,6 +2,10 @@
 
 [README](../README.md) · [API reference](client-api.md) · [Integration guide](client-guide.md)
 
+## Render Free
+
+For managed hosting, use the repository's [render.yaml](../render.yaml) and follow the [Render deployment guide](render.md). It covers the Free-plan Blueprint, origin configuration, health checks, proxy-IP limitations, frontend wiring and post-deploy validation. Render supplies PORT; the Blueprint sets HOST=0.0.0.0. Do not upload .env or Cloudflare tunnel secrets.
+
 ## Environment variables
 
 | Variable | Default | Details |
@@ -77,7 +81,7 @@ This starts a single backend process. Ctrl+C exits the log viewer without stoppi
 - **Resource isolation:** Compose uses a read-only root filesystem, 16 MiB temporary filesystem, dropped capabilities, no-new-privileges, 512 MiB memory, 1 CPU and 64 PIDs. These are deployment budgets, not a tested event-throughput guarantee.
 - **Storage:** no volume or database is required. Do not bind-mount macOS node_modules into Linux; the image installs dependencies for its own platform.
 - **Logs:** Compose rotates json-file logs at 10 MB per file with up to three files. Logs can contain usernames and gift details; this is not an audit log or event store.
-- **Healthcheck:** the image checks GET / every 30 seconds with a 3-second request deadline. This checks HTTP process reachability only, not TikTok connectivity or event completeness.
+- **Healthcheck:** the image checks GET /healthz every 30 seconds with a 3-second request deadline. This checks HTTP process reachability only, not TikTok connectivity or event completeness.
 - **Restart:** `unless-stopped` restarts a failed/exited container and normally starts it when the Docker daemon starts, unless you explicitly stopped it. It does not keep a sleeping/offline computer available. Healthcheck failure alone does not restart the container.
 
 Shell variables override Compose's `.env` interpolation values. Keep overrides consistent across up/build/config commands; an inline variable on one command is not persistent configuration.
@@ -214,6 +218,7 @@ Multiple backend processes do not share rooms or deduplicate upstream connection
 | HTTP 503 | All 10 room slots are occupied. Close unused subscriptions and allow the 10-second grace period to expire. |
 | Simulation returns 404 | Restart with `TEST_GIFTS=1`; the flag is disabled by default and its name remains unchanged. |
 | Simulation returns `ok (rooms: 0)` | No target room exists. Open `/events?username=...` first and use the same case. Nothing is queued for future subscribers. |
+| A username ended a LIVE and later started another | Keep the SSE stream open and inspect `status` events. The backend retires the ended session and resolves a fresh room on its 3-second/30-second retry schedule; it does not require a process restart. TikTok offline/restriction errors can still delay recovery. |
 | SSE looks connected but no application callbacks fire | Use named listeners such as `addEventListener('gift', ...)`; `onmessage` alone is insufficient. Separate backend transport status from TikTok status. |
 | Events arrive in bursts through a proxy | Disable response buffering/caching and verify the proxy supports streaming. |
 | Quiet connections disconnect periodically | Check proxy/provider idle timeouts and buffering; heartbeat comments should pass every 15 seconds. Slow clients exceeding the 256 KiB pending-byte limit are deliberately disconnected. |

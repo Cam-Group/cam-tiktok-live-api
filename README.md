@@ -63,6 +63,12 @@ source.addEventListener('gift', message => {
 | [Public access and publish checklist](docs/security.md) | No-DB access model, exact limits, trusted proxies, abuse controls and remaining publish requirements |
 | [Cloudflare Tunnel setup](docs/cloudflare.md) | Publish tiktok-live-api.vinhvu-cam.id.vn with a named tunnel, a private token file and correct visitor IP handling |
 
+## Render Free deployment
+
+Use the included [render.yaml](render.yaml) with **New > Blueprint** in Render. It selects the Free plan, runs offline tests during the build, binds to Render's port and asks for your frontend's ALLOWED_ORIGINS. Follow the [Render deployment guide](docs/render.md) for setup, HTTPS/SSE checks and frontend configuration.
+
+Free services can sleep. Forwarded client-IP handling remains deliberately untrusted: visitors may share a proxy quota of 5 streams and 60 requests/minute. This is a small trial configuration, not a qualified always-on public launch. No Render resources are created by adding these files.
+
 ## Docker: ready for a Linux move
 
 With a running Docker daemon and Docker Compose:

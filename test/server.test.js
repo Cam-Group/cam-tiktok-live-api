@@ -1,19 +1,22 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import { EventEmitter } from 'node:events';
+import { EventType } from 'piratetok-live-js';
 import { createBackend } from '../server.js';
+import { startTikTok } from '../src/tiktok.js';
 
-async function backend(t, { testEvents = false, origins = '' } = {}) {
+async function backend(t, { testEvents = false, origins = '', connectTikTok } = {}) {
   const oldTest = process.env.TEST_GIFTS, oldOrigins = process.env.ALLOWED_ORIGINS;
   process.env.TEST_GIFTS = testEvents ? '1' : '0';
   process.env.ALLOWED_ORIGINS = origins;
   const connections = [];
-  const server = createBackend((name, handlers) => {
+  const server = createBackend(connectTikTok ?? ((name, handlers) => {
     const connection = { name, handlers, disconnects: 0 };
     connections.push(connection);
     handlers.onStatus('ready');
     return { disconnect() { connection.disconnects++; } };
-  });
+  }));
   if (oldTest === undefined) delete process.env.TEST_GIFTS; else process.env.TEST_GIFTS = oldTest;
   if (oldOrigins === undefined) delete process.env.ALLOWED_ORIGINS; else process.env.ALLOWED_ORIGINS = oldOrigins;
   const sockets = new Set();
@@ -23,7 +26,7 @@ async function backend(t, { testEvents = false, origins = '' } = {}) {
     for (const socket of sockets) socket.destroy();
   }));
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  return { base: `http://127.0.0.1:${server.address().port}`, connections };
+  return { server, base: `http://127.0.0.1:${server.address().port}`, connections };
 }
 
 function stream(url) {
@@ -82,6 +85,78 @@ test('HTTP/SSE broadcasts every event to shared clients and isolates different r
     assert.deepEqual(await b.next(type), payload);
     assert.equal((await other.next(type)).marker, 'bob');
   }
+});
+
+test('a username recovers from LIVE end through offline retries into a new room without restarting SSE', { timeout: 5000 }, async t => {
+  const timers = [];
+  const nativeTimeout = globalThis.setTimeout;
+  t.mock.method(globalThis, 'setTimeout', (callback, ms, ...args) => {
+    const timer = nativeTimeout(callback, ms, ...args);
+    if (ms === 3000 || ms === 30000) timers.push({ timer, callback, ms });
+    return timer;
+  });
+  const turn = () => new Promise(resolve => setImmediate(resolve));
+  async function retryAfter(ms) {
+    assert.equal(timers.length, 1, 'only one backend retry is pending');
+    const pending = timers.shift();
+    assert.equal(pending.ms, ms);
+    clearTimeout(pending.timer);
+    pending.callback();
+    await turn();
+  }
+  let onlineRoom = 'old-room';
+  const clients = [];
+  class Client extends EventEmitter {
+    constructor(name) { super(); this.name = name; this.disconnects = 0; clients.push(this); }
+    connect() {
+      this.roomId = onlineRoom;
+      return onlineRoom ? Promise.resolve(onlineRoom) : Promise.reject(new Error('User is offline'));
+    }
+    disconnect() { this.disconnects++; this.emit(EventType.disconnected, null); }
+  }
+  const lib = { TikTokLiveClient: Client, EventType };
+  const { base } = await backend(t, { connectTikTok: (name, handlers) => startTikTok(name, handlers, lib) });
+  const first = await stream(`${base}/events?username=alice`);
+  await turn();
+  assert.equal(clients.length, 1);
+  onlineRoom = null;
+  clients[0].emit(EventType.liveEnded, {});
+  const second = await stream(`${base}/events?username=alice`);
+  assert.match((await second.next('status')).text, /ended the live stream.*Retrying in 3s/);
+  assert.equal(clients.length, 1, 'a new subscriber shares the existing username retry');
+  clients[0].emit(EventType.liveEnded, {});
+  clients[0].emit(EventType.disconnected, null);
+  assert.equal(clients[0].disconnects, 1);
+  await retryAfter(3000);
+  assert.equal(clients.length, 2);
+  await retryAfter(3000);
+  assert.equal(clients.length, 3);
+  onlineRoom = 'new-room';
+  await retryAfter(30000);
+  assert.equal(clients.length, 4);
+  assert.equal(clients[3].name, 'alice');
+  assert.equal(clients[3].roomId, 'new-room');
+  assert.equal(timers.length, 0);
+  clients[0].emit(EventType.chat, { content: 'stale message' });
+  clients[3].emit(EventType.chat, { common: { roomId: 'new-room' }, content: 'new LIVE' });
+  for (const subscriber of [first, second]) {
+    const chat = await subscriber.next('chat');
+    assert.equal(chat.roomId, 'new-room');
+    assert.equal(chat.text, 'new LIVE');
+  }
+  clients[3].emit(EventType.liveEnded, {});
+  assert.equal(timers.length, 1);
+  assert.equal(timers[0].ms, 3000, 'a successful new LIVE resets retry backoff');
+});
+
+test('closing active SSE sockets cleans up every upstream room', { timeout: 5000 }, async t => {
+  const { server, base, connections } = await backend(t);
+  await stream(`${base}/events?username=alice`);
+  await stream(`${base}/events?username=bob`);
+  const closed = new Promise(resolve => server.close(resolve));
+  server.closeAllConnections();
+  await closed;
+  assert.deepEqual(connections.map(connection => connection.disconnects), [1, 1]);
 });
 
 test('simulation endpoints use normalized payloads and support every data event', { timeout: 5000 }, async t => {

@@ -97,6 +97,53 @@ test('disconnected before rejection triggers onFail once, not onLost', async () 
   assert.equal(made.length, 1);
 });
 
+test('LIVE end retires the old session and requests one username-level retry without a disconnect event', async () => {
+  const { lib, made } = fakeLib(() => Promise.resolve('old-room'));
+  const { log, handlers } = recorder();
+  startTikTok('alice', handlers, lib);
+  await tick();
+  // Decode the same terminal control message used by the installed library.
+  const type = root.lookupType('WebcastControlMessage');
+  const payload = type.encode(type.fromObject({ action: 3 })).finish();
+  for (const event of decode('WebcastControlMessage', payload)) made[0].emit(event.type, event.data);
+  assert.deepEqual(log.lost, ['@alice has ended the live stream.']);
+  assert.equal(made[0].disconnects, 1);
+  const statuses = [...log.status];
+  made[0].emit(E.liveEnded, {});
+  made[0].emit(E.disconnected, null);
+  made[0].emit(E.reconnecting, {});
+  made[0].emit(E.chat, { content: 'stale session' });
+  assert.deepEqual(log.lost, ['@alice has ended the live stream.']);
+  assert.deepEqual(log.status, statuses);
+  assert.deepEqual(log.chats, []);
+});
+
+test('LIVE end during handshake does not report a late old-room connection as open', async () => {
+  let finish;
+  const { lib, made } = fakeLib(() => new Promise(resolve => { finish = resolve; }));
+  const { log, handlers } = recorder();
+  startTikTok('alice', handlers, lib);
+  made[0].emit(E.liveEnded, {});
+  finish('old-room');
+  await tick();
+  assert.deepEqual(log.opened, []);
+  assert.deepEqual(log.lost, ['@alice has ended the live stream.']);
+  assert.deepEqual(log.fails, []);
+});
+
+test('a late handshake failure after LIVE end cannot schedule a second retry', async () => {
+  let fail;
+  const { lib, made } = fakeLib(() => new Promise((_, reject) => { fail = reject; }));
+  const { log, handlers } = recorder();
+  startTikTok('alice', handlers, lib);
+  made[0].emit(E.liveEnded, {});
+  fail(new Error('old room closed'));
+  await tick();
+  assert.deepEqual(log.lost, ['@alice has ended the live stream.']);
+  assert.deepEqual(log.fails, []);
+  assert.deepEqual(log.opened, []);
+});
+
 test('no callbacks are delivered after disconnect', async () => {
   const { lib, made } = fakeLib(() => Promise.resolve('1'));
   const { log, handlers } = recorder();
@@ -193,7 +240,7 @@ test('connection status and disconnect notices use English', async () => {
   made[0].emit(E.liveEnded, {});
   assert.equal(log.status.at(-1), '@alice has ended the live stream.');
   made[0].emit(E.disconnected, null);
-  assert.equal(log.lost[0], 'Connection lost.');
+  assert.deepEqual(log.lost, ['@alice has ended the live stream.']);
 });
 
 test('library helpers end combos at repeatEnd = 1 and multiply gift price by quantity', () => {
