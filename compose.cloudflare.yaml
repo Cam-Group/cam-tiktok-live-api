@@ -1,0 +1,33 @@
+# Apply together with compose.yaml. Dashboard route: http://127.0.0.1:3100
+services:
+  backend:
+    environment:
+      TRUSTED_PROXIES: "127.0.0.1"
+      CLIENT_IP_HEADER: "cf-connecting-ip"
+  cloudflared:
+    image: cloudflare/cloudflared@sha256:4955524aeaa379e154023d5a027c250f7b35041a2e7e950cf13f144bc9b9c5ba
+    restart: unless-stopped
+    # Share only the backend's network namespace: tunnel requests arrive from loopback.
+    network_mode: service:backend
+    depends_on:
+      backend:
+        condition: service_healthy
+    command: ["tunnel", "--no-autoupdate", "run", "--token-file", "/run/secrets/cloudflare_tunnel_token"]
+    secrets:
+      - cloudflare_tunnel_token
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    mem_limit: 256m
+    cpus: 0.5
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+secrets:
+  cloudflare_tunnel_token:
+    file: ./.secrets/cloudflare-tunnel-token

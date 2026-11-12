@@ -1,0 +1,31 @@
+services:
+  backend:
+    build: .
+    init: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${PORT:-3100}:3100"
+    environment:
+      ALLOWED_ORIGINS: "${ALLOWED_ORIGINS:-}"
+      TEST_GIFTS: "0"
+      MAX_CLIENTS: "${MAX_CLIENTS:-100}"
+      MAX_CLIENTS_PER_IP: "${MAX_CLIENTS_PER_IP:-5}"
+      REQUESTS_PER_MINUTE: "${REQUESTS_PER_MINUTE:-60}"
+      GLOBAL_REQUESTS_PER_MINUTE: "${GLOBAL_REQUESTS_PER_MINUTE:-600}"
+      TRUSTED_PROXIES: "${TRUSTED_PROXIES:-}"
+      CLIENT_IP_HEADER: "${CLIENT_IP_HEADER:-x-forwarded-for}"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    mem_limit: 512m
+    cpus: 1.0
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

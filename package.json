@@ -1,0 +1,17 @@
+{
+  "name": "tiktok-live-backend",
+  "version": "1.0.0",
+  "description": "Self-hosted TikTok LIVE event backend powered by piratetok-live-js, streaming events to multiple clients over SSE",
+  "scripts": {
+    "test": "node --test",
+    "start": "node server.js"
+  },
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "dependencies": {
+    "piratetok-live-js": "0.3.0"
+  }
+}
